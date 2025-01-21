@@ -1,0 +1,82 @@
+domains:
+  - name: ipa.test
+    type: IPA
+    hosts:
+      - name: master.ipa.test
+        role: master
+        group: ipaserver
+        os: rhel-8.9
+      - name: client.ipa.test
+        role: client
+        group: ipaclient
+        os: rhel-8.9
+  - name: win2022.test
+    type: ad
+    hosts:
+      - name: ad1.win2022.test
+        role: ad
+        group: ad_root
+        os: win-2022-latest
+        host_type: 'windows'
+        network: IPv4
+        netbios: WIN2022
+phases:
+  - name: init
+    steps:
+      - playbook: init/testrunner-dir.yaml
+  - name: provision
+    steps:
+      - playbook: provision/mrack-up.yaml
+      - playbook: provision/wait.yaml
+  - name: prep
+    steps:
+      - playbook: prep/redhat-base.yaml
+      #- playbook: prep/enable-fips.yaml
+      - playbook: prep/install-ipa-packages.yaml
+      - playbook: prep/ipa-network.yaml
+      - playbook: prep/win-domain-setup.yaml
+        extra_vars:
+          upn_suffixes:
+            - UPNsuffix.com
+      - playbook: prep/win-user-add.yaml
+        extra_vars:
+          target_host: ad1.win2022.test
+          users:
+            # A test user with posix attributes defined
+            - name: testuser
+              password: Secret123
+              attributes:
+                uidNumber: 10042
+                gidNumber: 10047
+                loginShell: /bin/sh
+                homeDirectory: /home/testuser
+                unixHomeDirectory: /home/testuser
+                gecos: Test User
+            # A test user without posix attributes defined
+            - name: nonposixuser
+              password: Secret123
+            # A user with UPN suffix
+            - name: upnuser
+              password: Secret123456
+              upn: upnuser@UPNsuffix.com
+              attributes:
+                uidNumber: 10048
+                gidNumber: 10047
+                loginShell: /bin/sh
+                gecos: UPN User
+            - name: aduser1
+              password: Secret123
+  - name: test
+    steps:
+      # Install IPA master
+      - playbook: prep/ipa-server-install.yaml
+      - playbook: prep/ipa-client-install.yaml
+      - playbook: prep/ipa-adtrust-install.yaml
+      - playbook: prep/ipa-add-trust.yaml
+      - command: |
+          echo Secret123 | kinit admin
+          ipa trust-find
+        host: master.ipa.test
+  - name: teardown
+    steps:
+      - command: echo skip
